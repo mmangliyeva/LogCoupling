@@ -1,5 +1,18 @@
-import khttp.get
+package org.example
+
+
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.collections.set
+
+data class Developer(val id: String, val name: String)
+data class FileContributions(val file: String, val developers: List<Developer>)
+
+val fileContributionsMap: MutableMap<String, MutableList<Developer>> = mutableMapOf()
+
+
 
 fun main(args: Array<String>) {
 
@@ -10,83 +23,87 @@ fun main(args: Array<String>) {
 
     val repoOwner = args[0]
     val repoName = args[1]
-    val token = args[2] 
+    val token = args[2]
 
-    
+    val filesList = mutableListOf<String>()
+    val client = OkHttpClient()
+    // Fetch commit data
     val commitsUrl = "https://api.github.com/repos/$repoOwner/$repoName/commits"
-    val commitsResponse = get(commitsUrl, headers = mapOf("Authorization" to "token $token"))
-    val commits = commitsResponse.jsonArray
-
-    
-    var totalCommits = 0
-    val uniqueContributors = mutableSetOf<String>()
-    val fileModificationCount = mutableMapOf<String, Int>()
-
-    
-    for (commit in commits) {
-        totalCommits++
-        val commitUrl = commit["url"] as String
-        val commitResponse = get(commitUrl, headers = mapOf("Authorization" to "token $token"))
-        val files = (commitResponse.jsonObject["files"] as JSONArray)
-        val contributor = (commitResponse.jsonObject["author"] as Map<String, Any?>)["login"] as String
-        uniqueContributors.add(contributor)
-
-        
-        for (file in files) {
-            val filename = (file as Map<String, Any?>)["filename"] as String
-            fileModificationCount[filename] = fileModificationCount.getOrDefault(filename, 0) + 1
-        }
-    }
-
-    
-    val mostModifiedFiles = fileModificationCount.entries.sortedByDescending { it.value }.take(5)
-
-    
-    println("Repository Analysis for $repoOwner/$repoName:")
-    println("Total Commits: $totalCommits")
-    println("Unique Contributors: ${uniqueContributors.size}")
-    println("Most Modified Files/Modules:")
-    mostModifiedFiles.forEach { (file, count) ->
-        println("$file: $count modifications")
-    }
-
-    
-    val developerPairsFrequency = mutableMapOf<Pair<String, String>, Int>()
-    val fileContributorsMap = mutableMapOf<String, MutableSet<String>>()
-
-    
-    for (commit in commits) {
-        val commitUrl = commit["url"] as String
-        val commitResponse = get(commitUrl, headers = mapOf("Authorization" to "token $token"))
-        val files = (commitResponse.jsonObject["files"] as JSONArray)
-        val contributors = (commitResponse.jsonObject["author"] as Map<String, Any?>)["login"] as String
-
-    
-        for (file in files) {
-            val filename = (file as Map<String, Any?>)["filename"] as String
-
-            if (!fileContributorsMap.containsKey(filename)) {
-                fileContributorsMap[filename] = mutableSetOf(contributors)
-            } else {
-                fileContributorsMap[filename]?.add(contributors)
+    // Make a GET request to the GitHub API
+    val request = Request.Builder()
+        .url(commitsUrl)
+        .apply {
+            // Add authorization header if token is provided
+            if (token.isNotEmpty()) {
+                addHeader("Authorization", "token $token")
             }
         }
-    }
+        .build()
 
-    
-    for ((_, contributors) in fileContributorsMap) {
-        
-        val contributorList = contributors.toList()
-        for (i in 0 until contributorList.size - 1) {
-            for (j in i + 1 until contributorList.size) {
-                val pair = Pair(contributorList[i], contributorList[j])
-                developerPairsFrequency[pair] = developerPairsFrequency.getOrDefault(pair, 0) + 1
-            }
+    val response = client.newCall(request).execute()
+    val commitsJson = response.body?.string() ?: ""
+    val commits = JSONArray(commitsJson)
+    print(commits.length())
+    for (i in 0 until commits.length()) {
+        val commit = commits.getJSONObject(i)
+        val commitUrl = commit.getString("url")
+        println(commitUrl)
+        val commitRequest = Request.Builder()
+            .url(commitUrl)
+            .header("Authorization", "token $token")
+            .build()
+
+        val commitResponse = client.newCall(commitRequest).execute()
+        val commitJson = commitResponse.body?.string() ?: continue
+        val comm=JSONObject(commitJson)
+        val files = comm.getJSONArray("files")
+        val committerName = comm.getJSONObject("commit").getJSONObject("author").getString("name")
+        val committerId = comm.getJSONObject("commit").getJSONObject("author").getString("email")
+        val developer = Developer(committerId, committerName)
+        println(developer)
+
+        for (j in 0 until files.length()) {
+            val filename = files.getJSONObject(j).getString("filename")
+            filesList.add(filename)
+            val contributions = fileContributionsMap.getOrDefault(filename, mutableListOf())
+            contributions.add(developer)
+            fileContributionsMap[filename] = contributions
         }
     }
-    
-    println("\nFrequency of contribution by pairs of developers to the same files/modules:")
-    developerPairsFrequency.forEach { (pair, frequency) ->
-        println("$pair: $frequency times")
+
+    val developerPairsCount = calculateLogicalCoupling(filesList)
+    val topPairs = developerPairsCount.entries.sortedByDescending { it.value }.take(10)
+
+
+    topPairs.forEachIndexed { index, pair ->
+        val developer1 = pair.key.first
+        val developer2 = pair.key.second
+        val couplingCount = pair.value
+        println("${index + 1}. Developers ${developer1.name} and ${developer2.name} have a coupling count of $couplingCount")
     }
+
+
 }
+fun calculateLogicalCoupling(files: List<String>): Map<Pair<Developer, Developer>, Int> {
+    val developerPairsCount = mutableMapOf<Pair<Developer, Developer>, Int>()
+
+    for (file in files) {
+        val developers = fileContributionsMap[file] ?: continue
+
+        for (i in 0 until developers.size - 1) {
+            for (j in i + 1 until developers.size) {
+                val developer1 = developers[i]
+                val developer2 = developers[j]
+
+                // Exclude self-matching pairs
+                if (developer1 != developer2) {
+                    val pair = Pair(developer1, developer2)
+                    developerPairsCount[pair] = developerPairsCount.getOrDefault(pair, 0) + 1
+                }
+            }
+        }
+    }
+
+    return developerPairsCount
+}
+

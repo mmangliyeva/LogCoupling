@@ -10,7 +10,11 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.rybalkinsd:khttp:0.1.0")
+    implementation("org.jsoup:jsoup:1.14.2")
+    implementation("com.squareup.okhttp3:okhttp:4.9.2")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.23")
+    implementation("com.github.kittinunf.fuel:fuel:2.3.1")
+    implementation("org.json:json:20210307")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
 
