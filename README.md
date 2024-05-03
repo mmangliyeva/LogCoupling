@@ -22,7 +22,7 @@ cd LogCoupling
 
 5. Run the application by executing the following command:
 ```bash
-java -jar build/libs/LogCoupling-1.0-standalone.jar src/test/resources/tasks.yml <owner> <repository> <token>
+java -jar build/libs/LogCoupling-1.0-standalone.jar <owner> <repository> <token>
 ```
 Replace <owner> <repository> <token> with owner of the repository, repository name and your Github token
 
